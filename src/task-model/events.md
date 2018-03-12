@@ -1,3 +1,6 @@
+> [task-model/events.md](https://github.com/aturon/apr/blob/ffb00140a767d6e7a4a8875bf6965d10f830a271/src/task-model/events.md)
+> commit ffb00140a767d6e7a4a8875bf6965d10f830a271
+
 # 一个玩具事件循环
 
 异步编程经常被用于I/O, 但其实有很多其他类型的事件源. 在这一小节, 我们将会构建
@@ -22,13 +25,13 @@ struct ToyTimer {
 /// A wakeup request
 struct Registration {
     at: Instant,
-    wake: Arc<Wake>,
+    wake: Waker,
 }
 
 /// State for the worker thread that processes timer events
 struct Worker {
     rx: mpsc::Receiver<Registration>,
-    active: BTreeMap<Instant, Arc<Wake>>
+    active: BTreeMap<Instant, Waker>
 }
 
 impl ToyTimer {
@@ -40,7 +43,7 @@ impl ToyTimer {
     }
 
     // Register a new wakeup with this timer
-    fn register(&self, at: Instant, wake: Arc<Wake>) {
+    fn register(&self, at: Instant, wake: Waker) {
         self.tx.send(Registration { at, wake }).unwrap();
     }
 }
