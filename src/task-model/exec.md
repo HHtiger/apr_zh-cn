@@ -1,3 +1,6 @@
+> [task-model/exec.md](https://github.com/aturon/apr/blob/ffb00140a767d6e7a4a8875bf6965d10f830a271/src/task-model/exec.md)
+> commit ffb00140a767d6e7a4a8875bf6965d10f830a271
+
 # 一个玩具任务执行器
 
 来造一个任务执行器吧! 我们的目标是使任意数量的任务能够协调运行在*单个*OS线程上
@@ -16,6 +19,7 @@ use std::thread::{self, Thread};
 集合, 存储应该要被唤醒的任务id(因为这些任务在等待的事件已经发生了):
 
 ```rust
+// the internal executor state
 struct ExecState {
     // The next available task ID.
     next_id: usize,
@@ -42,20 +46,12 @@ pub struct ToyExec {
 ```
 
 现在, `ExecState`的`tasks`字段提供了`TaskEntry`实例, 这些实例包装了一个具体任务, 
-和对应的`WakeHandle`:
+和对应的`Waker`:
 
 ```rust
 struct TaskEntry {
     task: Box<ToyTask + Send>,
-    wake: Arc<WakeHandle>,
-}
-
-struct ToyWake {
-    // A link back to the executor that owns the task we want to wake up.
-    exec: ToyExec,
-
-    // The ID for the task we want to wake up.
-    id: usize,
+    wake: Waker,
 }
 ```
 
@@ -89,31 +85,32 @@ impl ToyExec {
 impl ToyExec {
     pub fn run(&self) {
         loop {
-            // each time around, we grab the *entire* set of ready-to-run task IDs:
+            // Each time around, we grab the *entire* set of ready-to-run task IDs:
             let mut ready = mem::replace(&mut self.state_mut().ready, HashSet::new());
 
-            // now try to `complete` each ready task:
+            // Now try to `complete` each ready task:
             for id in ready.drain() {
-                // note that we take *full ownership* of the task; if it completes,
-                // it will be dropped.
+                // we take *full ownership* of the task; if it completes, it will
+                // be dropped.
                 let entry = self.state_mut().tasks.remove(&id);
                 if let Some(mut entry) = entry {
-                    if let Async::WillWake = entry.task.complete(entry.wake.clone()) {
-                        // the task hasn't completed, so put it back in the table.
+                    if let Async::Pending = entry.task.poll(&entry.wake) {
+                        // The task hasn't completed, so put it back in the table.
                         self.state_mut().tasks.insert(id, entry);
                     }
                 }
             }
 
             // we'd processed all work we acquired on entry; block until more work
-            // is available
+            // is available. If new work became available after our `ready` snapshot,
+            // this will b no-op.
             thread::park();
         }
     }
 }
 ```
 
-这里精妙的地方是, 在每一轮循环, 我们*在开始的时候*`tick`所有准备好的东西, 然后
+这里精妙的地方是, 在每一轮循环, 我们*在开始的时候*`poll`所有准备好的东西, 然后
 "park"线程. `std`库的[`park`]/[`unpark`]让处理阻塞和唤醒OS线程变得很容易. 在
 这个例子里, 我们想要的是执行器底层的OS线程阻塞, 直到一些额外的任务已经就绪. 这样
 的话, 即使我们无法唤醒线程, 也不会有任何风险: 如果另外的线程在我们初次读取
@@ -135,6 +132,13 @@ impl ExecState {
     }
 }
 
+struct ToyWake {
+    // A link back to the executor that owns the task we want to wake up.
+    exec: ToyExec,
+
+    // The ID for the task we want to wake up.
+    id: usize,
+
 impl Wake for ToyWake {
     fn wake(&self) {
         self.exec.state_mut().wake_task(self.id);
@@ -155,27 +159,23 @@ impl ToyExec {
         state.next_id += 1;
 
         let wake = ToyWake { id, exec: self.clone() };
-        let entry = TaskEntry { wake: Arc::new(wake), task: Box::new(task) };
+        let entry = TaskEntry {
+            wake: Waker::from(Arc::new(wake)),
+            task: Box::new(task)
+        };
         state.tasks.insert(id, entry);
 
-        // A newly-added task is considered immediately ready to run
+        // A newly-added task is considered immediately ready to run,
+        // which will cause a subsequent call to `park` to immediately
+        // return.
         state.wake_task(id);
     }
 }
 ```
 
-最后, 一个任务也有可能没有被完成, 但所有唤醒它的句柄也被丢弃了, 而它也没有准备好
-运行. 对于这种情况, 我们希望把该任务也丢弃, 因为它其实是不可达的(unreachable):
+好了, 我们造了个任务调度器了! 但是在高兴之余, 一个很重要的地方是, 我们发现前面的
+实现会因为`Arc`循环引用而导致任务泄露. 试着解决这个问题吧, 这是个很好的练习.
 
-```rust
-impl Drop for ToyWake {
-    fn drop(&mut self) {
-        let mut state = self.exec.state_mut();
-        if !state.ready.contains(&self.id) {
-            state.tasks.remove(&self.id);
-        }
-    }
-}
-```
+但是, 就算解决了上面的问题, 它仍然是个"玩具"执行器. 现在, 让我们继续造个事件源,
+让任务等待去处理.
 
-好了, 我们造了个任务调度器了! 现在, 让我们造个事件源, 让任务模型等待去处理.

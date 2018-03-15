@@ -6,7 +6,7 @@
     - [文件服务](crash-course/files.md)
     - [添加缓存](crash-course/caching.md)
     - [添加流(Add Streaming)](crash-course/streaming.md)
-- [任务与执行期](task-model/chapter.md)
+- [任务与执行器](task-model/chapter.md)
     - [背景: 同步 vs. 异步](task-model/intro.md)
     - [通过任务掌握异步编程](task-model/tasks.md)
     - [玩具版任务执行器](task-model/exec.md)

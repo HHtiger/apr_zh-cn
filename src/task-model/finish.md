@@ -1,3 +1,6 @@
+> [task-model/finish.md](https://github.com/aturon/apr/blob/ffb00140a767d6e7a4a8875bf6965d10f830a271/src/task-model/finish.md)
+> commit ffb00140a767d6e7a4a8875bf6965d10f830a271
+
 # 整合任务执行器与事件循环
 
 至此, 我们已经做了一个简单的执行器, 以在单线程中执行多个任务, 以及一个简单的
@@ -30,15 +33,12 @@ impl Periodic {
 }
 ```
 
-The `period` field says how often the task should print a "ding" message. The
-implementation is very straightforward; note that the task is intended to run
-forever, continuously printing a message after each `period` has elapsed:
 `period`字段告诉我们要多频繁地打印"ding"信息. 这个实现很直接: 告诉任务是要永远
 执行, 并且持续地在每经过一个`period`时间后打印一次信息:
 
 ```rust
 impl Task for Periodic {
-    fn complete(&mut self, wake: &WakeHandle) -> Async<()> {
+    fn poll(&mut self, wake: &Waker) -> Async<()> {
         // are we ready to ding yet?
         let now = Instant::now();
         if now >= self.next {
@@ -48,7 +48,7 @@ impl Task for Periodic {
 
         // make sure we're registered to wake up at the next expected `ding`
         self.timer.register(self.next, wake);
-        Async::WillWake
+        Async::Pending
     }
 }
 ```
@@ -103,14 +103,8 @@ Task 1 - ding
 
 ## 练习: 逐渐结束程序
 
-Both the `Periodic` task and the `ToyExec` are designed to run
-without ever stopping.
 `Periodic`和`ToyExec`都被设计成不会停止的.
 
-- Modify `Periodic` so that each instance is set to ding only a fixed number of
-  times, and then the task is shut down.
-- Modify `ToyExec` to stop running when there are no more tasks.
-- Test your solution!
 - 修改`Periodic`, 使得每个实例能够被设置为只会ding固定次数, 然后对应的任务停止.
 - 修改`ToyExec`, 使得当没有任务存在的时候, 他会停止执行.
 - 测试你的方案!
